@@ -36,6 +36,16 @@ List unresolved questions, risks, and dependencies.
 Do not invent information that is not present in the meeting notes.
 """
 
+def analyze_meeting(client, model, meeting_notes):
+    print(f"Analyzing with model: {model}")
+    
+    response = client.responses.create(
+        model=model,
+        instructions=MEETING_ASSISTANT_INSTRUCTIONS,
+        input=meeting_notes,
+    )
+
+    return response
 
 # Load environment variables from the local .env file
 load_dotenv()
@@ -123,10 +133,10 @@ try:
 
         try:
             with st.spinner("Analyzing meeting notes..."):
-                response = client.responses.create(
+                response = analyze_meeting(
+                    client=client,
                     model=selected_model,
-                    instructions=MEETING_ASSISTANT_INSTRUCTIONS,
-                    input=meeting_notes,
+                    meeting_notes=meeting_notes,
                 )
 
             st.session_state.meeting_analysis = response.output_text
