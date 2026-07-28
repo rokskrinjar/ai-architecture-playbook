@@ -4,6 +4,38 @@ import streamlit as st
 from dotenv import load_dotenv
 from openai import OpenAI
 
+if "meeting_analysis" not in st.session_state:
+    st.session_state.meeting_analysis = None
+
+if "usage" not in st.session_state:
+    st.session_state.usage = None
+
+MAX_MEETING_NOTES_CHARACTERS = 12_000
+MEETING_ASSISTANT_INSTRUCTIONS = """
+You are an enterprise meeting assistant.
+
+Analyze the meeting notes and return:
+
+## Executive Summary
+Provide a concise summary of the meeting.
+
+## Key Decisions
+List decisions that were explicitly made.
+
+## Action Items
+For every action item include:
+- Task
+- Owner
+- Deadline
+
+If the owner or deadline is not explicitly mentioned, write "Not specified".
+
+## Risks and Open Questions
+List unresolved questions, risks, and dependencies.
+
+Do not invent information that is not present in the meeting notes.
+"""
+
 
 # Load environment variables from the local .env file
 load_dotenv()
@@ -63,7 +95,15 @@ try:
     meeting_notes = st.text_area(
         "Paste meeting notes:",
         height=250,
+        max_chars=MAX_MEETING_NOTES_CHARACTERS,
         placeholder="Example: Dana confirmed that the project deadline is Friday...",
+    )
+
+    character_count = len(meeting_notes)
+
+    st.caption(
+        f"{character_count:,} / "
+        f"{MAX_MEETING_NOTES_CHARACTERS:,} characters"
     )
 
     analyze_button = st.button("Analyze meeting")
@@ -73,45 +113,61 @@ try:
             st.warning("Please enter meeting notes before starting the analysis.")
             st.stop()
 
-        prompt = f"""
-    You are an enterprise meeting assistant.
-
-    Analyze the following meeting notes and return:
-
-    ## Executive Summary
-    A concise summary of the meeting.
-
-    ## Key Decisions
-    List the decisions that were made.
-
-    ## Action Items
-    For every action item include:
-    - Task
-    - Owner
-    - Deadline
-
-    If the owner or deadline is not explicitly mentioned, write "Not specified".
-
-    ## Risks and Open Questions
-    List unresolved questions, risks, or dependencies.
-
-    Meeting notes:
-    {meeting_notes}
-    """
+        if character_count > MAX_MEETING_NOTES_CHARACTERS:
+            st.error(
+                "The meeting notes are too long. "
+                f"Please reduce them to "
+                f"{MAX_MEETING_NOTES_CHARACTERS:,} characters."
+            )
+            st.stop()
 
         try:
             with st.spinner("Analyzing meeting notes..."):
                 response = client.responses.create(
                     model=selected_model,
-                    input=prompt,
+                    instructions=MEETING_ASSISTANT_INSTRUCTIONS,
+                    input=meeting_notes,
                 )
 
-            st.subheader("Meeting Analysis")
-            st.markdown(response.output_text)
+            st.session_state.meeting_analysis = response.output_text
+            st.session_state.usage = response.usage
 
         except Exception as error:
             st.error("The meeting analysis failed.")
             st.exception(error)
+
+    if st.session_state.meeting_analysis:
+        st.subheader("Meeting Analysis")
+        st.markdown(st.session_state.meeting_analysis)
+
+        st.download_button(
+            label="Download analysis",
+            data=st.session_state.meeting_analysis,
+            file_name="meeting-analysis.md",
+            mime="text/markdown",
+        )
+
+        if st.session_state.usage:
+            st.subheader("API Usage")
+
+            col1, col2, col3 = st.columns(3)
+
+            col1.metric(
+                "Input tokens",
+                st.session_state.usage.input_tokens,
+            )
+
+            col2.metric(
+                "Output tokens",
+                st.session_state.usage.output_tokens,
+            )
+
+            col3.metric(
+                "Total tokens",
+                st.session_state.usage.total_tokens,
+            )
+
+        
 
 except Exception as error:
     st.error("The application could not connect to the OpenAI API.")
